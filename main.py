@@ -5,6 +5,7 @@ from os.path import dirname
 
 import itertools
 import pandas as pd
+from sklearn import preprocessing
 
 
 def define_cli_opts():
@@ -101,13 +102,18 @@ def create_vector_space_from_docs(documents):
             document_word_count.append(df_wordcount)
             document_ids.append(doc_id)
 
-        document_word_count = pd.concat(document_word_count, axis=1)
-        document_word_count.columns = document_ids
-        document_word_count = document_word_count.fillna(0)
+    document_word_count = pd.concat(document_word_count, axis=1)
+    document_word_count.columns = document_ids
+    document_word_count = document_word_count.fillna(0)
 
-    # TODO: sum word occurrences in collection
+    # sum word occurrences in collection
+    collection_word_count = document_word_count.sum(axis=1)
 
     # TODO: calculate tf-idf -> create a vector space form collection
+    # normalize vectors
+    document_vector_space = preprocessing.normalize(document_word_count, norm='l2', axis=0)
+    pprint(type(document_vector_space))
+
 
 
 if __name__ == "__main__":
