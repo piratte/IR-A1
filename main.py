@@ -33,6 +33,7 @@ def process_query_file(query_file):
     cur_xml_tag = ""
     query_num = ""
     query_string = ""
+    # TODO: check if this is UTF-8
     with open(query_file) as input_file:
         for line in input_file.readlines():
             if is_tag_begin(line):
@@ -59,6 +60,9 @@ def process_vert_format_line(line):
     return result
 
 
+def convert_to_dataframe(input_dict, cols, index):
+    return pd.DataFrame(list(zip(input_dict.keys(), input_dict.values())), columns=cols).set_index(index)
+
 def is_tag_begin(line):
     return line[0] == '<' and line[1] != '/'
 
@@ -67,7 +71,7 @@ def sanitize_doc_word(word):
     return word
 
 
-def count_words(document_filename):
+def count_words_in_doc(document_filename):
     cur_xml_tag = ""
     doc_num = ""
     wordcount = {}
@@ -96,9 +100,8 @@ def create_vector_space_from_docs(documents):
     docs_dir = dirname(documents)
     with open(documents) as documents_file:
         for document in documents_file.readlines():
-            (doc_id, wordcount) = count_words(docs_dir + "/" + document.strip())
-            df_wordcount = pd.DataFrame(list(zip(wordcount.keys(), wordcount.values())), columns=["words", "count"])\
-                .set_index("words")
+            (doc_id, wordcount) = count_words_in_doc(docs_dir + "/" + document.strip())
+            df_wordcount = convert_to_dataframe(wordcount, cols=["words", "count"], index="words")
             document_word_count.append(df_wordcount)
             document_ids.append(doc_id)
 
@@ -110,10 +113,22 @@ def create_vector_space_from_docs(documents):
     collection_word_count = document_word_count.sum(axis=1)
 
     # TODO: calculate tf-idf -> create a vector space form collection
+
+
     # normalize vectors
     document_vector_space = preprocessing.normalize(document_word_count, norm='l2', axis=0)
-    pprint(type(document_vector_space))
 
+    return document_vector_space, collection_word_count, document_ids
+
+
+def count_words_in_qry(query):
+    result = {}
+    for word in query.split():
+        if word not in result:
+            result[word] = 1
+        else:
+            result[word] += 1
+    return result
 
 
 if __name__ == "__main__":
@@ -121,5 +136,20 @@ if __name__ == "__main__":
     (options, args) = opts.parse_args()
     queries = parse_queries(options.queries)
 
-    vector_space = create_vector_space_from_docs(options.documents)
+    #vector_space, collection_word_count, doc_list = create_vector_space_from_docs(options.documents)
 
+    # count words in queries
+    queries = map(lambda x: (x[0], count_words_in_qry(x[1])), queries)
+
+    # transform queries into dataframes
+    queries = map(lambda x: (x[0], convert_to_dataframe(x[1], cols=["words", "count"], index="words")), queries)
+
+    # transform them into a vector the same size as the document vector space
+    pd.concat()
+
+    # normalize
+    normalized_query = normalize(query)
+
+    # for each query count the similarity between it and all the documents
+
+    # rank documents based on said similarity
