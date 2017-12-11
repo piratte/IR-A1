@@ -5,6 +5,7 @@ from os.path import dirname
 
 import itertools
 import pandas as pd
+import numpy as np
 from sklearn import preprocessing
 
 
@@ -101,12 +102,10 @@ def create_vector_space_from_docs(documents):
     with open(documents) as documents_file:
         for document in documents_file.readlines():
             (doc_id, wordcount) = count_words_in_doc(docs_dir + "/" + document.strip())
-            df_wordcount = convert_to_dataframe(wordcount, cols=["words", "count"], index="words")
+            df_wordcount = convert_to_dataframe(wordcount, cols=["word", doc_id], index="word")
             document_word_count.append(df_wordcount)
-            document_ids.append(doc_id)
 
     document_word_count = pd.concat(document_word_count, axis=1)
-    document_word_count.columns = document_ids
     document_word_count = document_word_count.fillna(0)
 
     # sum word occurrences in collection
@@ -116,7 +115,7 @@ def create_vector_space_from_docs(documents):
 
 
     # normalize vectors
-    document_vector_space = preprocessing.normalize(document_word_count, norm='l2', axis=0)
+    document_vector_space = normalize(document_word_count)
 
     return document_vector_space, collection_word_count, document_ids
 
@@ -131,25 +130,37 @@ def count_words_in_qry(query):
     return result
 
 
+"""
+For the input pandas dataframe output a normalized numpy array
+"""
+def normalize(dataframe):
+    return preprocessing.normalize(dataframe, norm='l2', axis=0)
+
+
 if __name__ == "__main__":
     opts = define_cli_opts()
     (options, args) = opts.parse_args()
     queries = parse_queries(options.queries)
 
-    #vector_space, collection_word_count, doc_list = create_vector_space_from_docs(options.documents)
+    vector_space, collection_word_count, doc_list = create_vector_space_from_docs(options.documents)
 
     # count words in queries
     queries = map(lambda x: (x[0], count_words_in_qry(x[1])), queries)
 
     # transform queries into dataframes
-    queries = map(lambda x: (x[0], convert_to_dataframe(x[1], cols=["words", "count"], index="words")), queries)
+    queries = map(lambda x: (x[0], convert_to_dataframe(x[1], cols=["word", x[0]], index="word")), queries)
 
     # transform them into a vector the same size as the document vector space
-    pd.concat()
+    query_word_counts = [x[1] for x in queries]
+    query_word_counts.append(collection_word_count)
+    df_query_word_count = pd.concat(query_word_counts, axis=1)
+    df_query_word_count = df_query_word_count.drop(df_query_word_count.columns[-1], axis=1).fillna(0)
 
     # normalize
-    normalized_query = normalize(query)
+    normalized_queries = normalize(df_query_word_count)
 
     # for each query count the similarity between it and all the documents
+    similarity = np.dot(np.transpose(normalized_queries), vector_space)
+    pprint(similarity)
 
     # rank documents based on said similarity
