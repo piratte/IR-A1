@@ -109,15 +109,14 @@ def create_vector_space_from_docs(documents):
     document_word_count = document_word_count.fillna(0)
 
     # sum word occurrences in collection
-    collection_word_count = document_word_count.sum(axis=1)
+    collection_word_count_out = document_word_count.sum(axis=1)
 
     # TODO: calculate tf-idf -> create a vector space form collection
-
 
     # normalize vectors
     document_vector_space = normalize(document_word_count)
 
-    return document_vector_space, collection_word_count, document_ids
+    return document_vector_space, collection_word_count_out, document_ids
 
 
 def count_words_in_qry(query):
@@ -130,10 +129,11 @@ def count_words_in_qry(query):
     return result
 
 
-"""
-For the input pandas dataframe output a normalized numpy array
-"""
 def normalize(dataframe):
+    """
+    For the input pandas dataframe output a normalized numpy array
+    """
+
     return preprocessing.normalize(dataframe, norm='l2', axis=0)
 
 
@@ -141,8 +141,10 @@ if __name__ == "__main__":
     opts = define_cli_opts()
     (options, args) = opts.parse_args()
     queries = parse_queries(options.queries)
+    print("Queries parsed")
 
     vector_space, collection_word_count, doc_list = create_vector_space_from_docs(options.documents)
+    print("Vector space created")
 
     # count words in queries
     queries = map(lambda x: (x[0], count_words_in_qry(x[1])), queries)
@@ -154,13 +156,18 @@ if __name__ == "__main__":
     query_word_counts = [x[1] for x in queries]
     query_word_counts.append(collection_word_count)
     df_query_word_count = pd.concat(query_word_counts, axis=1)
-    df_query_word_count = df_query_word_count.drop(df_query_word_count.columns[-1], axis=1).fillna(0)
+
+    # drop the collection_word_count column and the rows for words which are in queries, but not in documents
+    df_query_word_count = df_query_word_count.drop(df_query_word_count.columns[-1], axis=1)\
+                                             .fillna(0)\
+                                             [df_query_word_count.index.isin(collection_word_count.index)]
 
     # normalize
     normalized_queries = normalize(df_query_word_count)
 
     # for each query count the similarity between it and all the documents
     similarity = np.dot(np.transpose(normalized_queries), vector_space)
-    pprint(similarity)
+    print("Similarity computed")
+    pprint(similarity.shape)
 
     # rank documents based on said similarity
