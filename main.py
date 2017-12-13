@@ -6,6 +6,7 @@ from os.path import dirname
 import itertools
 import pandas as pd
 import numpy as np
+import progressbar
 from sklearn import preprocessing
 
 
@@ -97,15 +98,23 @@ def count_words_in_doc(document_filename):
 
 def create_vector_space_from_docs(documents):
     document_ids = []
-    document_word_count = []
+    document_word_count = None
     docs_dir = dirname(documents)
     with open(documents) as documents_file:
-        for document in documents_file.readlines():
-            (doc_id, wordcount) = count_words_in_doc(docs_dir + "/" + document.strip())
-            df_wordcount = convert_to_dataframe(wordcount, cols=["word", doc_id], index="word")
-            document_word_count.append(df_wordcount)
+        all_docs = documents_file.readlines()
+        with progressbar.ProgressBar(max_value=len(all_docs)) as bar:
+            doc_counter = 0
+            for document in all_docs:
+                (doc_id, wordcount) = count_words_in_doc(docs_dir + "/" + document.strip())
+                df_wordcount = convert_to_dataframe(wordcount, cols=["word", doc_id], index="word")
+                if document_word_count is None:
+                    document_word_count = df_wordcount
+                else:
+                    document_word_count = pd.concat([document_word_count, df_wordcount], axis=1)
 
-    document_word_count = pd.concat(document_word_count, axis=1)
+                doc_counter += 1
+                bar.update(doc_counter)
+
     document_word_count = document_word_count.fillna(0)
 
     # sum word occurrences in collection
