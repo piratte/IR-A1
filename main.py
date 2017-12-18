@@ -6,8 +6,13 @@ from os.path import dirname
 import itertools
 import pandas as pd
 import numpy as np
-import progressbar
+from functools import reduce
+import tqdm as tqdm
 from sklearn import preprocessing
+
+import multiprocessing
+
+MAX_THREADS = multiprocessing.cpu_count() * 2 # count in hyperthreading
 
 
 def define_cli_opts():
@@ -62,8 +67,13 @@ def process_vert_format_line(line):
     return result
 
 
-def convert_to_dataframe(input_dict, cols, index):
-    return pd.DataFrame(list(zip(input_dict.keys(), input_dict.values())), columns=cols).set_index(index)
+def convert_dict_to_dataframe(input_dict, cols, index):
+    return convert_list_to_dataframe(list(zip(input_dict.keys(), input_dict.values())), cols, index)
+
+
+def convert_list_to_dataframe(input_list, cols, index):
+    return pd.DataFrame(input_list, columns=cols).set_index(index)
+
 
 def is_tag_begin(line):
     return line[0] == '<' and line[1] != '/'
@@ -96,35 +106,50 @@ def count_words_in_doc(document_filename):
     return doc_num, wordcount
 
 
+def join_dicts(dict_old, dict_new):
+    intersection = {key: val + dict_old[key] for key, val in dict_new.items() if key in dict_old}
+    result = dict_old.copy()
+    result.update(dict_new)
+    result.update(intersection)
+    return result
+
+
+def map_parallel(input_list, funct_to_map, threads=MAX_THREADS):
+    with multiprocessing.Pool(threads) as pool:
+        results = list(tqdm.tqdm(pool.imap(funct_to_map, input_list), total=len(input_list)))
+
+    return results
+
+
+def process_document(filename):
+    (doc_id, wordcount) = count_words_in_doc(filename)
+    df_wordcount = convert_dict_to_dataframe(wordcount, cols=["word", doc_id], index="word")
+    return doc_id, wordcount, df_wordcount
+
+
+def compute_similarity(df_query, vector_space):
+    """
+    Computes similarity between query and documents in vector space
+    :param df_query: query represented as a dataframe (index=word, 1 column=weight)
+    :param vector_space: document represented as a dataframe (index=word, 1 column=weight)
+    :return:
+    """
+
 def create_vector_space_from_docs(documents):
-    document_ids = []
-    document_word_count = None
     docs_dir = dirname(documents)
     with open(documents) as documents_file:
-        all_docs = documents_file.readlines()
-        with progressbar.ProgressBar(max_value=len(all_docs)) as bar:
-            doc_counter = 0
-            for document in all_docs:
-                (doc_id, wordcount) = count_words_in_doc(docs_dir + "/" + document.strip())
-                df_wordcount = convert_to_dataframe(wordcount, cols=["word", doc_id], index="word")
-                if document_word_count is None:
-                    document_word_count = df_wordcount
-                else:
-                    document_word_count = pd.concat([document_word_count, df_wordcount], axis=1)
-
-                doc_counter += 1
-                bar.update(doc_counter)
-
-    document_word_count = document_word_count.fillna(0)
-
-    # sum word occurrences in collection
-    collection_word_count_out = document_word_count.sum(axis=1)
+        all_docs = list(map(lambda x: docs_dir + "/" + x.strip(), documents_file.readlines()))
+        docs_info = map_parallel(all_docs, process_document)
 
     # TODO: calculate tf-idf -> create a vector space form collection
 
     # normalize vectors
-    document_vector_space = normalize(document_word_count)
-
+    document_ids = [x[0] for x in docs_info]
+    word_count_dicts = [x[1] for x in docs_info]
+    collection_word_count_out = reduce(lambda x, y: join_dicts(x, y), word_count_dicts)
+    result_sparse_vector_space = [x[2] for x in docs_info]
+    document_vector_space = map(normalize, result_sparse_vector_space)
+    # pprint(document_vector_space)
     return document_vector_space, collection_word_count_out, document_ids
 
 
@@ -140,10 +165,13 @@ def count_words_in_qry(query):
 
 def normalize(dataframe):
     """
-    For the input pandas dataframe output a normalized numpy array
+    Normalize dataframe and return it as a dataframe with same properties
+    :param dataframe: input dataframe
+    :return: dataframe with normalized values
     """
-
-    return preprocessing.normalize(dataframe, norm='l2', axis=0)
+    return convert_list_to_dataframe(list(zip(dataframe.index, preprocessing.normalize(dataframe, norm='l2', axis=0))),
+                                     cols=list(dataframe.columns.values),
+                                     index=dataframe.index.name)
 
 
 if __name__ == "__main__":
@@ -156,27 +184,18 @@ if __name__ == "__main__":
     print("Vector space created")
 
     # count words in queries
+    query_ids = [query[0] for query in queries]
     queries = map(lambda x: (x[0], count_words_in_qry(x[1])), queries)
 
     # transform queries into dataframes
-    queries = map(lambda x: (x[0], convert_to_dataframe(x[1], cols=["word", x[0]], index="word")), queries)
-
-    # transform them into a vector the same size as the document vector space
-    query_word_counts = [x[1] for x in queries]
-    query_word_counts.append(collection_word_count)
-    df_query_word_count = pd.concat(query_word_counts, axis=1)
-
-    # drop the collection_word_count column and the rows for words which are in queries, but not in documents
-    df_query_word_count = df_query_word_count.drop(df_query_word_count.columns[-1], axis=1)\
-                                             .fillna(0)\
-                                             [df_query_word_count.index.isin(collection_word_count.index)]
+    queries = map(lambda x: (x[0], convert_dict_to_dataframe(x[1], cols=["word", x[0]], index="word")), queries)
 
     # normalize
-    normalized_queries = normalize(df_query_word_count)
+    normalized_queries = map(lambda x: (x[0], normalize(x[1])), queries)
 
     # for each query count the similarity between it and all the documents
-    similarity = np.dot(np.transpose(normalized_queries), vector_space)
+    map_parallel(list(normalized_queries), lambda x: compute_similarity(x, vector_space))
+
     print("Similarity computed")
-    pprint(similarity.shape)
 
     # rank documents based on said similarity
