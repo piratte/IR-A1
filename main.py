@@ -114,7 +114,7 @@ def join_dicts(dict_old, dict_new):
     return result
 
 
-def map_parallel(input_list, funct_to_map, threads=MAX_THREADS):
+def map_parallel(funct_to_map, input_list, threads=MAX_THREADS):
     with multiprocessing.Pool(threads) as pool:
         results = list(tqdm.tqdm(pool.imap(funct_to_map, input_list), total=len(input_list)))
 
@@ -127,30 +127,22 @@ def process_document(filename):
     return doc_id, wordcount, df_wordcount
 
 
-def compute_similarity(df_query, vector_space):
-    """
-    Computes similarity between query and documents in vector space
-    :param df_query: query represented as a dataframe (index=word, 1 column=weight)
-    :param vector_space: document represented as a dataframe (index=word, 1 column=weight)
-    :return:
-    """
-
 def create_vector_space_from_docs(documents):
     docs_dir = dirname(documents)
     with open(documents) as documents_file:
         all_docs = list(map(lambda x: docs_dir + "/" + x.strip(), documents_file.readlines()))
-        docs_info = map_parallel(all_docs, process_document)
+        docs_info = map_parallel(process_document, all_docs)
 
     # TODO: calculate tf-idf -> create a vector space form collection
 
     # normalize vectors
     document_ids = [x[0] for x in docs_info]
     word_count_dicts = [x[1] for x in docs_info]
-    collection_word_count_out = reduce(lambda x, y: join_dicts(x, y), word_count_dicts)
+    # collection_word_count_out = reduce(lambda x, y: join_dicts(x, y), word_count_dicts)
     result_sparse_vector_space = [x[2] for x in docs_info]
     document_vector_space = map(normalize, result_sparse_vector_space)
     # pprint(document_vector_space)
-    return document_vector_space, collection_word_count_out, document_ids
+    return document_vector_space, {}, document_ids
 
 
 def count_words_in_qry(query):
@@ -169,9 +161,35 @@ def normalize(dataframe):
     :param dataframe: input dataframe
     :return: dataframe with normalized values
     """
+    cols = [dataframe.index.name]
+    cols.extend(dataframe.columns.values)
     return convert_list_to_dataframe(list(zip(dataframe.index, preprocessing.normalize(dataframe, norm='l2', axis=0))),
-                                     cols=list(dataframe.columns.values),
-                                     index=dataframe.index.name)
+                                     cols=cols, index=dataframe.index.name)
+
+
+def compute_similarity(df_document, df_query):
+    result = 0
+    doc_id = df_document.columns[0]
+    qry_id = df_query.columns[0]
+    for query_word in df_query.index:
+        if query_word in df_document.index:
+            result += float(df_query.at[query_word, qry_id]) * float(df_document.at[query_word, doc_id])
+
+    return result
+
+
+def compute_all_similarities(df_query):
+    """
+    Computes similarity between query and documents in vector space (uses global variable to access the VS)
+    :param df_query: query represented as a dataframe (index=word, 1 column=weight)
+    :return: similarity of the documents represented in teh vector_space to the query
+    """
+    global vector_space
+    result = list(map(lambda df_document: compute_similarity(df_document, df_query), vector_space))
+    if not result:
+        return 0
+    else:
+        return result[0]
 
 
 if __name__ == "__main__":
@@ -191,10 +209,12 @@ if __name__ == "__main__":
     queries = map(lambda x: (x[0], convert_dict_to_dataframe(x[1], cols=["word", x[0]], index="word")), queries)
 
     # normalize
-    normalized_queries = map(lambda x: (x[0], normalize(x[1])), queries)
+    normalized_queries = map(lambda x: normalize(x[1]), queries)
 
     # for each query count the similarity between it and all the documents
-    map_parallel(list(normalized_queries), lambda x: compute_similarity(x, vector_space))
+    # similarity = map(compute_all_similarities, list(normalized_queries))
+    similarity = map_parallel(compute_all_similarities, list(normalized_queries))
+    pprint(type(list(similarity)))
 
     print("Similarity computed")
 
