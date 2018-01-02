@@ -140,7 +140,7 @@ def create_vector_space_from_docs(documents):
     word_count_dicts = [x[1] for x in docs_info]
     # collection_word_count_out = reduce(lambda x, y: join_dicts(x, y), word_count_dicts)
     result_sparse_vector_space = [x[2] for x in docs_info]
-    document_vector_space = map(normalize, result_sparse_vector_space)
+    document_vector_space = list(map(normalize, result_sparse_vector_space))
     # pprint(document_vector_space)
     return document_vector_space, {}, document_ids
 
@@ -185,11 +185,17 @@ def compute_all_similarities(df_query):
     :return: similarity of the documents represented in teh vector_space to the query
     """
     global vector_space
-    result = list(map(lambda df_document: compute_similarity(df_document, df_query), vector_space))
-    if not result:
-        return 0
-    else:
-        return result[0]
+    return list(map(lambda df_document: compute_similarity(df_document, df_query), vector_space))
+
+
+def get_relevant_docs_for_qry(query_scores):
+    scores, qry_id= query_scores
+    global doc_list
+    similar_docs = []
+    for idx, score in enumerate(scores):
+        if score > 0:
+            similar_docs.append((doc_list[idx], score))
+    return qry_id, sorted(similar_docs, key=lambda x: x[1], reverse=True)
 
 
 if __name__ == "__main__":
@@ -198,6 +204,7 @@ if __name__ == "__main__":
     queries = parse_queries(options.queries)
     print("Queries parsed")
 
+    print("Creating document vector space:")
     vector_space, collection_word_count, doc_list = create_vector_space_from_docs(options.documents)
     print("Vector space created")
 
@@ -209,13 +216,19 @@ if __name__ == "__main__":
     queries = map(lambda x: (x[0], convert_dict_to_dataframe(x[1], cols=["word", x[0]], index="word")), queries)
 
     # normalize
-    normalized_queries = map(lambda x: normalize(x[1]), queries)
+    normalized_queries = list(map(lambda x: normalize(x[1]), queries))
 
+    print("Computing query - document similarities:")
     # for each query count the similarity between it and all the documents
     # similarity = map(compute_all_similarities, list(normalized_queries))
-    similarity = map_parallel(compute_all_similarities, list(normalized_queries))
-    pprint(type(list(similarity)))
-
-    print("Similarity computed")
+    similarity = map_parallel(compute_all_similarities, normalized_queries)
+    print("Similarities computed")
 
     # rank documents based on said similarity
+    print("Ranking documents:")
+    results = map_parallel(get_relevant_docs_for_qry, list(zip(similarity, query_ids)))
+    print("Ranking done")
+
+    pprint("Writting results...")
+    pprint(list(results))
+    pprint("Writting results done")
