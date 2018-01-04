@@ -27,6 +27,28 @@ def define_cli_opts():
     return result_opts
 
 
+def write_output_file(output_file, results, label):
+    """
+    Wanted output columns are:
+    1. qid
+    2. iter
+    3. docno
+    4. rank
+    5. sim
+    6. run_id
+    :param output_file: output file path
+    :param results: list of results [(qid, [(doc_no, sim),...]),...]
+    :param label: run_id
+    """
+    with open(output_file, mode='w') as outfile:
+        for qry in results:
+            qid = qry[0]
+            rank = 0
+            for doc_res in qry[1]:
+                outfile.write("%s\t0\t%s\t%d\t%f\t%s\n" % (qid, doc_res[0], rank, doc_res[1], label))
+                rank += 1
+
+
 def parse_queries(queries_filename):
     result = []
     data_dir = dirname(queries_filename)
@@ -230,5 +252,5 @@ if __name__ == "__main__":
     print("Ranking done")
 
     pprint("Writting results...")
-    pprint(list(results))
+    write_output_file(options.output_file, list(results), options.label)
     pprint("Writting results done")
