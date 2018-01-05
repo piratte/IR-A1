@@ -13,6 +13,8 @@ from sklearn import preprocessing
 import multiprocessing
 
 MAX_THREADS = multiprocessing.cpu_count() * 2 # count in hyperthreading
+MAX_NUM_OF_RESULTS = 1000
+options = None
 
 
 def define_cli_opts():
@@ -22,8 +24,21 @@ def define_cli_opts():
     result_opts.add_option('-d', "--documents", dest='documents', help='file with a list of document file names')
     result_opts.add_option('-r', "--label", dest='label', help='label identifying particular experiment run '
                                                                '(to be inserted in the result file as "run_id"')
-    result_opts.add_option('-o', "--output_file", dest='output_file', help='output file  (Sec 5.5)')
-
+    result_opts.add_option('-o', "--output-file", dest='output_file', help='output file  (Sec 5.5)')
+    result_opts.add_option("--leave-stopwords", action='store_true', dest='stopwords', default=False,
+                           help="include stopwords in document processing")
+    result_opts.add_option("--forms", action='store_true', dest='forms', default=False,
+                           help="use forms instead of lemmas")
+    result_opts.add_option("--num-threads", dest='num_threads', default=MAX_THREADS, type="int",
+                           help="number of threads for parallel computations")
+    result_opts.add_option("--lowercase", action='store_true', dest='lowercase', default=False,
+                           help="lowercase both document and query words")
+    result_opts.add_option("--tf_weighting", dest='tf_weighting', type="string", default="natural",
+                           help='how to weight term frequency in the document vector space. '
+                                'Choose from "Natural" (default), "Log", "Boolean", "Augmented"')
+    result_opts.add_option("--idf_weighting", dest='idf_weighting', type="string", default="none",
+                           help='which inverse document frequency to use in the  document vector space.'
+                                'Choose from "None" (default), "Idf", "Probabilistic Idf"')
     return result_opts
 
 
@@ -47,6 +62,8 @@ def write_output_file(output_file, results, label):
             for doc_res in qry[1]:
                 outfile.write("%s\t0\t%s\t%d\t%f\t%s\n" % (qid, doc_res[0], rank, doc_res[1], label))
                 rank += 1
+                if rank == MAX_NUM_OF_RESULTS:
+                    break
 
 
 def parse_queries(queries_filename):
@@ -63,7 +80,7 @@ def process_query_file(query_file):
     query_num = ""
     query_string = ""
     # TODO: check if this is UTF-8
-    with open(query_file) as input_file:
+    with open(query_file, encoding='utf-8') as input_file:
         for line in input_file.readlines():
             if is_tag_begin(line):
                 cur_xml_tag = line[1:line.index('>')]
@@ -72,21 +89,32 @@ def process_query_file(query_file):
             elif cur_xml_tag == 'num':
                 query_num = line
             elif cur_xml_tag == 'title':
-                query_string += " " + process_vert_format_line(line)
+                word = process_vert_format_line(line)
+                if not word: continue
+                query_string += " " + word
 
     return query_num.strip(), query_string.strip()
 
 
+WORD_TYPE_INDEX = 3
+NON_STOPWORD_TYPE_CHARS = ['A', 'C', 'N']
+
+
 def process_vert_format_line(line):
     result = ""
+    word_index = 1 if options.forms else 2
     try:
-        result = line.split('\t')[2] # get the form of the word
-
-        # get everything up to the first non-alphanum character
-        result = "".join(itertools.takewhile(str.isalnum, result))
+        # get the form of the word
+        line_split = line.split('\t')
+        result = line_split[word_index]
+        if not options.stopwords and (line_split[WORD_TYPE_INDEX][0] not in NON_STOPWORD_TYPE_CHARS):
+            result = ""
+        else:
+            # get everything up to the first non-alphanum character
+            result = "".join(itertools.takewhile(str.isalnum, result))
     except IndexError:
         pass
-    return result
+    return sanitize_word(result)
 
 
 def convert_dict_to_dataframe(input_dict, cols, index):
@@ -101,8 +129,8 @@ def is_tag_begin(line):
     return line[0] == '<' and line[1] != '/'
 
 
-def sanitize_doc_word(word):
-    return word
+def sanitize_word(word):
+    return word.lower() if options.lowercase else word
 
 
 def count_words_in_doc(document_filename):
@@ -117,8 +145,8 @@ def count_words_in_doc(document_filename):
                 pass
             if cur_xml_tag == 'docno':
                 doc_num = line[line.find('>')+1:line.rfind('<')]
-            elif cur_xml_tag == 'text':
-                word = sanitize_doc_word(process_vert_format_line(line))
+            elif cur_xml_tag in ['text', 'title', 'heading']:
+                word = process_vert_format_line(line)
                 if not word: continue
                 if word not in wordcount:
                     wordcount[word] = 1
@@ -143,15 +171,57 @@ def map_parallel(funct_to_map, input_list, threads=MAX_THREADS):
     return results
 
 
+def get_max_and_sum_of_dict(wordcount):
+    result_max = 0
+    result_sum = 0
+    for freq in wordcount.values():
+        result_sum += freq
+        if freq > result_max: result_max = freq
+    return result_max, result_sum
+
+
+def weigh_term_freq(wordcount):
+    result = {}
+
+    if options.tf_weighting.lower() in ["natural", "augmented"]:
+        most_freqent_word_frequence, document_length = get_max_and_sum_of_dict(wordcount)
+
+    for word, freq in wordcount.items():
+        # tf part
+        if options.tf_weighting.lower() == "boolean":
+            result[word] = 1
+        elif options.tf_weighting.lower() == "natural":
+            result[word] = wordcount[word]/document_length
+        elif options.tf_weighting.lower() == "log":
+            result[word] = 1 + np.math.log10(wordcount[word])
+        elif options.tf_weighting.lower() == "augmented":
+            result[word] = 0.5 + 0.5*wordcount[word]/most_freqent_word_frequence
+        else:
+            raise ValueError("Unknown value of parameter --tf_weighting: " + options.tf_weighting.lower())
+
+        # idf part
+        if options.idf_weighting.lower() == "none":
+            pass
+        elif options.idf_weighting.lower() == "idf":
+            result[word] = result[word] /
+        elif options.idf_weighting.lower() == "probabilistic idf":
+            pass
+        else:
+            raise ValueError("Unknown value of parameter --idf_weighting: " + options.idf_weighting.lower())
+
+    return result
+
+
 def process_document(filename):
     (doc_id, wordcount) = count_words_in_doc(filename)
+    wordcount = weigh_term_freq(wordcount)
     df_wordcount = convert_dict_to_dataframe(wordcount, cols=["word", doc_id], index="word")
     return doc_id, wordcount, df_wordcount
 
 
 def create_vector_space_from_docs(documents):
     docs_dir = dirname(documents)
-    with open(documents) as documents_file:
+    with open(documents, encoding='utf-8') as documents_file:
         all_docs = list(map(lambda x: docs_dir + "/" + x.strip(), documents_file.readlines()))
         docs_info = map_parallel(process_document, all_docs)
 
@@ -163,8 +233,12 @@ def create_vector_space_from_docs(documents):
     # collection_word_count_out = reduce(lambda x, y: join_dicts(x, y), word_count_dicts)
     result_sparse_vector_space = [x[2] for x in docs_info]
     print("Normalizing vector space:")
-    document_vector_space = list(map_parallel(normalize, result_sparse_vector_space))
-    return document_vector_space, {}, document_ids
+    if options.num_threads == MAX_THREADS:
+        document_vector_space = list(map_parallel(normalize, result_sparse_vector_space, threads=int(MAX_THREADS/2)))
+    else:
+        document_vector_space = list(map_parallel(normalize, result_sparse_vector_space, threads=options.num_threads))
+
+    return document_vector_space, document_ids
 
 
 def count_words_in_qry(query):
@@ -211,7 +285,7 @@ def compute_all_similarities(df_query):
 
 
 def get_relevant_docs_for_qry(query_scores):
-    scores, qry_id= query_scores
+    scores, qry_id = query_scores
     global doc_list
     similar_docs = []
     for idx, score in enumerate(scores):
@@ -227,7 +301,7 @@ if __name__ == "__main__":
     print("Queries parsed")
 
     print("Creating document vector space:")
-    vector_space, collection_word_count, doc_list = create_vector_space_from_docs(options.documents)
+    vector_space, doc_list = create_vector_space_from_docs(options.documents)
     print("Vector space created")
 
     # count words in queries
@@ -242,7 +316,6 @@ if __name__ == "__main__":
 
     print("Computing query - document similarities:")
     # for each query count the similarity between it and all the documents
-    # similarity = map(compute_all_similarities, list(normalized_queries))
     similarity = map_parallel(compute_all_similarities, normalized_queries)
     print("Similarities computed")
 
