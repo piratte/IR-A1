@@ -162,8 +162,8 @@ def create_vector_space_from_docs(documents):
     word_count_dicts = [x[1] for x in docs_info]
     # collection_word_count_out = reduce(lambda x, y: join_dicts(x, y), word_count_dicts)
     result_sparse_vector_space = [x[2] for x in docs_info]
-    document_vector_space = list(map(normalize, result_sparse_vector_space))
-    # pprint(document_vector_space)
+    print("Normalizing vector space:")
+    document_vector_space = list(map_parallel(normalize, result_sparse_vector_space))
     return document_vector_space, {}, document_ids
 
 
