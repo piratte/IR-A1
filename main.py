@@ -3,6 +3,7 @@ from optparse import OptionParser
 from pprint import pprint
 from os.path import dirname
 
+import pickle
 import itertools
 import pandas as pd
 import numpy as np
@@ -14,7 +15,10 @@ import multiprocessing
 
 MAX_THREADS = multiprocessing.cpu_count() * 2 # count in hyperthreading
 MAX_NUM_OF_RESULTS = 1000
+
 options = None
+idf_dict = {}
+num_of_docs = 0
 
 
 def define_cli_opts():
@@ -37,8 +41,11 @@ def define_cli_opts():
                            help='how to weight term frequency in the document vector space. '
                                 'Choose from "Natural" (default), "Log", "Boolean", "Augmented"')
     result_opts.add_option("--idf_weighting", dest='idf_weighting', type="string", default="none",
-                           help='which inverse document frequency to use in the  document vector space.'
+                           help='which inverse document frequency to use in the document vector space.'
                                 'Choose from "None" (default), "Idf", "Probabilistic Idf"')
+    result_opts.add_option("--similarity", dest='similarity', type="string", default="cosine",
+                           help='which similarity measuring technique to use.'
+                                'Choose from "Cosine" (default), "Dice"')
     return result_opts
 
 
@@ -137,7 +144,7 @@ def count_words_in_doc(document_filename):
     cur_xml_tag = ""
     doc_num = ""
     wordcount = {}
-    with open(document_filename) as input_file:
+    with open(document_filename, encoding='utf-8') as input_file:
         for line in input_file.readlines():
             if is_tag_begin(line):
                 cur_xml_tag = line[1:line.index('>')].lower()
@@ -189,25 +196,27 @@ def weigh_term_freq(wordcount):
     for word, freq in wordcount.items():
         # tf part
         if options.tf_weighting.lower() == "boolean":
-            result[word] = 1
+            word_weight = 1
         elif options.tf_weighting.lower() == "natural":
-            result[word] = wordcount[word]/document_length
+            word_weight = wordcount[word]/document_length
         elif options.tf_weighting.lower() == "log":
-            result[word] = 1 + np.math.log10(wordcount[word])
+            word_weight = 1 + np.math.log10(wordcount[word])
         elif options.tf_weighting.lower() == "augmented":
-            result[word] = 0.5 + 0.5*wordcount[word]/most_freqent_word_frequence
+            word_weight = 0.5 + 0.5*wordcount[word]/most_freqent_word_frequence
         else:
             raise ValueError("Unknown value of parameter --tf_weighting: " + options.tf_weighting.lower())
 
         # idf part
+
         if options.idf_weighting.lower() == "none":
             pass
         elif options.idf_weighting.lower() == "idf":
-            result[word] = result[word] /
+            word_weight = word_weight / np.math.log((float(num_of_docs)/float(idf_dict[word]))) #TODO: unicode problem
         elif options.idf_weighting.lower() == "probabilistic idf":
-            pass
+            word_weight = word_weight / np.math.log((float(num_of_docs - idf_dict[word]) / float(idf_dict[word])))
         else:
             raise ValueError("Unknown value of parameter --idf_weighting: " + options.idf_weighting.lower())
+        result[word] = word_weight
 
     return result
 
@@ -221,11 +230,16 @@ def process_document(filename):
 
 def create_vector_space_from_docs(documents):
     docs_dir = dirname(documents)
+
+    # count the number of documents
+    global num_of_docs
+    with open(documents, encoding='utf-8') as documents_file:
+        for i, l in enumerate(documents_file, 1): pass
+        num_of_docs = i
+
     with open(documents, encoding='utf-8') as documents_file:
         all_docs = list(map(lambda x: docs_dir + "/" + x.strip(), documents_file.readlines()))
         docs_info = map_parallel(process_document, all_docs)
-
-    # TODO: calculate tf-idf -> create a vector space form collection
 
     # normalize vectors
     document_ids = [x[0] for x in docs_info]
@@ -267,9 +281,17 @@ def compute_similarity(df_document, df_query):
     result = 0
     doc_id = df_document.columns[0]
     qry_id = df_query.columns[0]
-    for query_word in df_query.index:
-        if query_word in df_document.index:
-            result += float(df_query.at[query_word, qry_id]) * float(df_document.at[query_word, doc_id])
+    if options.similarity.lower() == "cosine":
+        for query_word in df_query.index:
+            if query_word in df_document.index:
+                result += float(df_query.at[query_word, qry_id]) * float(df_document.at[query_word, doc_id])
+    elif options.similarity.lower() == "dice":
+        query = set(df_query.index)
+        doc = set(df_document.index)
+        intersect = query.intersection(doc)
+        result = (float(2*len(intersect)))/(len(doc) + len(query))
+    else:
+        raise ValueError("Unknown value of parameter --similarity: " + options.tf_weighting.lower())
 
     return result
 
@@ -297,6 +319,16 @@ def get_relevant_docs_for_qry(query_scores):
 if __name__ == "__main__":
     opts = define_cli_opts()
     (options, args) = opts.parse_args()
+
+    # load precomputed idf for this document collection
+    if options.idf_weighting in ["idf", "probabilistic idf"]:
+        if options.lowercase:
+            idf_filename = "obj/idf-lower.pkl"
+        else:
+            idf_filename = "obj/idf.pkl"
+        with open(idf_filename, "rb") as inp:
+            idf_dict = pickle.load(inp)
+
     queries = parse_queries(options.queries)
     print("Queries parsed")
 
