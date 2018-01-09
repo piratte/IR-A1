@@ -86,7 +86,6 @@ def process_query_file(query_file):
     cur_xml_tag = ""
     query_num = ""
     query_string = ""
-    # TODO: check if this is UTF-8
     with open(query_file, encoding='utf-8') as input_file:
         for line in input_file.readlines():
             if is_tag_begin(line):
@@ -207,15 +206,20 @@ def weigh_term_freq(wordcount):
             raise ValueError("Unknown value of parameter --tf_weighting: " + options.tf_weighting.lower())
 
         # idf part
+        try:
+            idf_word_weight = idf_dict[word]
+        except KeyError:
+            idf_word_weight = 1
 
         if options.idf_weighting.lower() == "none":
             pass
         elif options.idf_weighting.lower() == "idf":
-            word_weight = word_weight / np.math.log((float(num_of_docs)/float(idf_dict[word]))) #TODO: unicode problem
+            word_weight = word_weight / np.math.log((float(num_of_docs)/float(idf_word_weight)))
         elif options.idf_weighting.lower() == "probabilistic idf":
-            word_weight = word_weight / np.math.log((float(num_of_docs - idf_dict[word]) / float(idf_dict[word])))
+            word_weight = word_weight / np.math.log((float(num_of_docs - idf_word_weight) / float(idf_word_weight)))
         else:
             raise ValueError("Unknown value of parameter --idf_weighting: " + options.idf_weighting.lower())
+
         result[word] = word_weight
 
     return result
