@@ -31,8 +31,8 @@ def define_cli_opts():
     result_opts.add_option('-o', "--output-file", dest='output_file', help='output file  (Sec 5.5)')
     result_opts.add_option("--leave-stopwords", action='store_true', dest='stopwords', default=False,
                            help="include stopwords in document processing")
-    result_opts.add_option("--forms", action='store_true', dest='forms', default=False,
-                           help="use forms instead of lemmas")
+    result_opts.add_option("--lemmas", action='store_false', dest='forms', default=True,
+                           help="use lemmas instead of forms")
     result_opts.add_option("--num-threads", dest='num_threads', default=MAX_THREADS, type="int",
                            help="number of threads for parallel computations")
     result_opts.add_option("--lowercase", action='store_true', dest='lowercase', default=False,
