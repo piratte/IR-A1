@@ -259,9 +259,9 @@ def create_vector_space_from_docs(documents):
     # word_count_dicts = [x[1] for x in docs_info]
     # collection_word_count_out = reduce(lambda x, y: join_dicts(x, y), word_count_dicts)
     # with open("obj/idf.pkl", "wb") as outp:
-    #    pickle.dump(collection_word_count_out, outp)
-    #    import sys
-    #    sys.exit(0)
+    #     pickle.dump(collection_word_count_out, outp)
+    #     import sys
+    #     sys.exit(0)
 
     result_sparse_vector_space = [x[2] for x in docs_info]
     print("Normalizing vector space:")
