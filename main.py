@@ -223,9 +223,10 @@ def weigh_term_freq(wordcount):
         if options.idf_weighting.lower() == "none":
             pass
         elif options.idf_weighting.lower() == "idf":
-            word_weight = word_weight / np.math.log((float(num_of_docs)/float(idf_word_weight)))
+            word_weight = word_weight * np.math.log((float(num_of_docs)/float(idf_word_weight)))
         elif options.idf_weighting.lower() == "probabilistic idf":
-            word_weight = word_weight / np.math.log((float(num_of_docs - idf_word_weight) / float(idf_word_weight)))
+            idf_part = max(0, np.math.log((float(num_of_docs - idf_word_weight) / float(idf_word_weight))))
+            word_weight = word_weight * idf_part
         else:
             raise ValueError("Unknown value of parameter --idf_weighting: " + options.idf_weighting.lower())
 
