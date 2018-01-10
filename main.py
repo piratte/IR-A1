@@ -1,21 +1,20 @@
 #!/usr/bin/python3
-from optparse import OptionParser
-from pprint import pprint
-from os.path import dirname
-
-import pickle
 import itertools
-import pandas as pd
+import multiprocessing
+import pickle
+from optparse import OptionParser
+from os.path import dirname
+from pprint import pprint
+
 import numpy as np
-from functools import reduce
+import pandas as pd
 import tqdm as tqdm
 from sklearn import preprocessing
-
-import multiprocessing
 
 MAX_THREADS = multiprocessing.cpu_count() * 2 # count in hyperthreading
 MAX_NUM_OF_RESULTS = 1000
 
+stopword_set = None
 options = None
 idf_dict = {}
 num_of_docs = 0
@@ -29,8 +28,8 @@ def define_cli_opts():
     result_opts.add_option('-r', "--label", dest='label', help='label identifying particular experiment run '
                                                                '(to be inserted in the result file as "run_id"')
     result_opts.add_option('-o', "--output-file", dest='output_file', help='output file  (Sec 5.5)')
-    result_opts.add_option("--leave-stopwords", action='store_true', dest='stopwords', default=False,
-                           help="include stopwords in document processing")
+    result_opts.add_option("--stopwords-removal", dest='stopwords', default="none",
+                           help="method of removing stopwords. Choose from None (default), POS, frequency")
     result_opts.add_option("--lemmas", action='store_false', dest='forms', default=True,
                            help="use lemmas instead of forms")
     result_opts.add_option("--num-threads", dest='num_threads', default=MAX_THREADS, type="int",
@@ -106,6 +105,15 @@ WORD_TYPE_INDEX = 3
 NON_STOPWORD_TYPE_CHARS = ['A', 'C', 'N']
 
 
+def is_stopword(result, line_split, removal_method):
+    if removal_method.lower() == "none":
+        return False
+    elif removal_method.lower() == "pos":
+        return line_split[WORD_TYPE_INDEX][0] not in NON_STOPWORD_TYPE_CHARS
+    elif removal_method.lower() == "frequency":
+        return result in stopword_set
+
+
 def process_vert_format_line(line):
     result = ""
     word_index = 1 if options.forms else 2
@@ -113,7 +121,7 @@ def process_vert_format_line(line):
         # get the form of the word
         line_split = line.split('\t')
         result = line_split[word_index]
-        if not options.stopwords and (line_split[WORD_TYPE_INDEX][0] not in NON_STOPWORD_TYPE_CHARS):
+        if is_stopword(result, line_split, options.stopwords):
             result = ""
         else:
             # get everything up to the first non-alphanum character
@@ -333,6 +341,10 @@ if __name__ == "__main__":
         with open(idf_filename, "rb") as inp:
             idf_dict = pickle.load(inp)
 
+    if options.stopwords.lower() == "frequency":
+        with open("obj/stopwords.pkl") as inp:
+            stopword_set = pickle.load(inp)
+
     queries = parse_queries(options.queries)
     print("Queries parsed")
 
@@ -350,16 +362,14 @@ if __name__ == "__main__":
     # normalize
     normalized_queries = list(map(lambda x: normalize(x[1]), queries))
 
-    print("Computing query - document similarities:")
+    print("Computing query - document similarities and ranking documents...")
     # for each query count the similarity between it and all the documents
-    similarity = map_parallel(compute_all_similarities, normalized_queries)
-    print("Similarities computed")
+    similarity = map(compute_all_similarities, normalized_queries)
 
     # rank documents based on said similarity
-    print("Ranking documents:")
-    results = map_parallel(get_relevant_docs_for_qry, list(zip(similarity, query_ids)))
+    results = map(get_relevant_docs_for_qry, list(zip(similarity, query_ids)))
     print("Ranking done")
 
-    pprint("Writting results...")
+    pprint('Writting results...')
     write_output_file(options.output_file, list(results), options.label)
-    pprint("Writting results done")
+    pprint('Writting results done')
