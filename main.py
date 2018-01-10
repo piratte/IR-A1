@@ -8,6 +8,7 @@ from pprint import pprint
 
 import numpy as np
 import pandas as pd
+from functools import reduce
 import tqdm as tqdm
 from sklearn import preprocessing
 
