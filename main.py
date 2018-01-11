@@ -237,8 +237,7 @@ def weigh_term_freq(wordcount):
 
 def process_document(filename):
     (doc_id, wordcount) = count_words_in_doc(filename)
-    wordcount = weigh_term_freq(wordcount)
-    df_wordcount = convert_dict_to_dataframe(wordcount, cols=["word", doc_id], index="word")
+    df_wordcount = convert_dict_to_dataframe(weigh_term_freq(wordcount), cols=["word", doc_id], index="word")
     return doc_id, wordcount, df_wordcount
 
 
@@ -255,6 +254,7 @@ def create_vector_space_from_docs(documents):
         all_docs = list(map(lambda x: docs_dir + "/" + x.strip(), documents_file.readlines()))
         docs_info = map_parallel(process_document, all_docs)
 
+    document_ids = [x[0] for x in docs_info]
     # word_count_dicts = [x[1] for x in docs_info]
     # collection_word_count_out = reduce(lambda x, y: join_dicts(x, y), word_count_dicts)
     # with open("obj/idf.pkl", "wb") as outp:
@@ -263,8 +263,6 @@ def create_vector_space_from_docs(documents):
     #     sys.exit(0)
 
     # normalize vectors
-    document_ids = [x[0] for x in docs_info]
-
     result_sparse_vector_space = [x[2] for x in docs_info]
     print("Normalizing vector space:")
     if options.num_threads == MAX_THREADS:
