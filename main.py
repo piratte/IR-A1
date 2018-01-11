@@ -255,15 +255,15 @@ def create_vector_space_from_docs(documents):
         all_docs = list(map(lambda x: docs_dir + "/" + x.strip(), documents_file.readlines()))
         docs_info = map_parallel(process_document, all_docs)
 
-    # normalize vectors
-    document_ids = [x[0] for x in docs_info]
-
     # word_count_dicts = [x[1] for x in docs_info]
     # collection_word_count_out = reduce(lambda x, y: join_dicts(x, y), word_count_dicts)
     # with open("obj/idf.pkl", "wb") as outp:
     #     pickle.dump(collection_word_count_out, outp)
     #     import sys
     #     sys.exit(0)
+
+    # normalize vectors
+    document_ids = [x[0] for x in docs_info]
 
     result_sparse_vector_space = [x[2] for x in docs_info]
     print("Normalizing vector space:")
