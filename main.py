@@ -348,7 +348,11 @@ if __name__ == "__main__":
             idf_dict = pickle.load(inp)
 
     if options.stopwords.lower() == "frequency":
-        with open("obj/stopwords.pkl") as inp:
+        if options.lowercase:
+            stopw_filename = "obj/stopwords-lower.pkl"
+        else:
+            stopw_filename = "obj/stopwords.pkl"
+        with open(stopw_filename) as inp:
             stopword_set = pickle.load(inp)
 
     queries = parse_queries(options.queries)
