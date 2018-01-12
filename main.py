@@ -42,10 +42,16 @@ def define_cli_opts():
                                 'Choose from "Natural" (default), "Log", "Boolean", "Augmented"')
     result_opts.add_option("--idf_weighting", dest='idf_weighting', type="string", default="none",
                            help='which inverse document frequency to use in the document vector space.'
-                                'Choose from "None" (default), "Idf", "Probabilistic Idf"')
+                                'Choose from "None" (default), "Idf", "Probabilistic-Idf"')
     result_opts.add_option("--similarity", dest='similarity', type="string", default="cosine",
                            help='which similarity measuring technique to use.'
                                 'Choose from "Cosine" (default), "Dice"')
+    result_opts.add_option("--query_norm", dest='query_norm', type="string", default="cosine",
+                           help='which normalization technique to use on the queries.'
+                                'Choose from "Cosine" (default), "None", "Unique')
+    result_opts.add_option("--doc_norm", dest='doc_norm', type="string", default="cosine",
+                           help='which normalization technique to use on the documents.'
+                                'Choose from "Cosine" (default), "None", "Unique')
     return result_opts
 
 
@@ -224,7 +230,7 @@ def weigh_term_freq(wordcount):
             pass
         elif options.idf_weighting.lower() == "idf":
             word_weight = word_weight * np.math.log((float(num_of_docs)/float(idf_word_weight)))
-        elif options.idf_weighting.lower() == "probabilistic idf":
+        elif options.idf_weighting.lower() == "probabilistic-idf":
             idf_part = max(0, np.math.log((float(num_of_docs - idf_word_weight) / float(idf_word_weight))))
             word_weight = word_weight * idf_part
         else:
@@ -266,9 +272,9 @@ def create_vector_space_from_docs(documents):
     result_sparse_vector_space = [x[2] for x in docs_info]
     print("Normalizing vector space:")
     if options.num_threads == MAX_THREADS:
-        document_vector_space = list(map_parallel(normalize, result_sparse_vector_space, threads=int(MAX_THREADS/2)))
+        document_vector_space = list(map_parallel(normalize_doc, result_sparse_vector_space, threads=int(MAX_THREADS/2)))
     else:
-        document_vector_space = list(map_parallel(normalize, result_sparse_vector_space, threads=options.num_threads))
+        document_vector_space = list(map_parallel(normalize_doc, result_sparse_vector_space, threads=options.num_threads))
 
     return document_vector_space, document_ids
 
@@ -283,16 +289,31 @@ def count_words_in_qry(query):
     return result
 
 
-def normalize(dataframe):
+def normalize_doc(dataframe):
+    return normalize(dataframe, options.doc_norm)
+
+
+def normalize(dataframe, method):
     """
     Normalize dataframe and return it as a dataframe with same properties
+    :param method: normalization method (cosine, none or unique)
     :param dataframe: input dataframe
     :return: dataframe with normalized values
     """
-    cols = [dataframe.index.name]
-    cols.extend(dataframe.columns.values)
-    return convert_list_to_dataframe(list(zip(dataframe.index, preprocessing.normalize(dataframe, norm='l2', axis=0))),
-                                     cols=cols, index=dataframe.index.name)
+    if method.lower() == "cosine":
+        cols = [dataframe.index.name]
+        cols.extend(dataframe.columns.values)
+        return convert_list_to_dataframe(list(zip(dataframe.index, preprocessing.normalize(dataframe, norm='l2', axis=0))),
+                                         cols=cols, index=dataframe.index.name)
+    elif method.lower() == "none":
+        return dataframe
+
+    elif method.lower() == "unique":
+        uniques = len(list(dataframe.index))
+        return dataframe / uniques
+
+    else:
+        raise ValueError("Unknown normalization method %s" % method)
 
 
 def compute_similarity(df_document, df_query):
@@ -352,7 +373,7 @@ if __name__ == "__main__":
             stopw_filename = "obj/stopwords-lower.pkl"
         else:
             stopw_filename = "obj/stopwords.pkl"
-        with open(stopw_filename) as inp:
+        with open(stopw_filename, "rb") as inp:
             stopword_set = pickle.load(inp)
 
     queries = parse_queries(options.queries)
@@ -370,7 +391,7 @@ if __name__ == "__main__":
     queries = map(lambda x: (x[0], convert_dict_to_dataframe(x[1], cols=["word", x[0]], index="word")), queries)
 
     # normalize
-    normalized_queries = list(map(lambda x: normalize(x[1]), queries))
+    normalized_queries = list(map(lambda x: normalize(x[1], options.query_norm), queries))
 
     print("Computing query - document similarities and ranking documents...")
     # for each query count the similarity between it and all the documents

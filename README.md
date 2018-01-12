@@ -1,2 +1,4 @@
-# IR-A1
-Information retrieval assignement 1
+# Information Retrieval Assignement 1
+
+
+
