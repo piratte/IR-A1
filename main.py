@@ -29,14 +29,14 @@ def define_cli_opts():
     result_opts.add_option('-r', "--label", dest='label', help='label identifying particular experiment run '
                                                                '(to be inserted in the result file as "run_id"')
     result_opts.add_option('-o', "--output-file", dest='output_file', help='output file  (Sec 5.5)')
-    result_opts.add_option("--stopwords-removal", dest='stopwords', default="none",
-                           help="method of removing stopwords. Choose from None (default), POS, frequency")
-    result_opts.add_option("--lemmas", action='store_false', dest='forms', default=True,
-                           help="use lemmas instead of forms")
     result_opts.add_option("--num-threads", dest='num_threads', default=MAX_THREADS, type="int",
                            help="number of threads for parallel computations")
+    result_opts.add_option("--lemmas", action='store_false', dest='forms', default=True,
+                           help="use lemmas instead of forms")
     result_opts.add_option("--lowercase", action='store_true', dest='lowercase', default=False,
                            help="lowercase both document and query words")
+    result_opts.add_option("--stopwords-removal", dest='stopwords', default="none",
+                           help="method of removing stopwords. Choose from None (default), POS, frequency")
     result_opts.add_option("--tf_weighting", dest='tf_weighting', type="string", default="natural",
                            help='how to weight term frequency in the document vector space. '
                                 'Choose from "Natural" (default), "Log", "Boolean", "Augmented"')
