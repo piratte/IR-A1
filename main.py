@@ -36,7 +36,7 @@ def define_cli_opts():
     result_opts.add_option("--lowercase", action='store_true', dest='lowercase', default=False,
                            help="lowercase both document and query words")
     result_opts.add_option("--stopwords-removal", dest='stopwords', default="none",
-                           help="method of removing stopwords. Choose from None (default), POS, frequency")
+                           help="method of removing stopwords. Choose from None (default), POS, frequency, list")
     result_opts.add_option("--tf_weighting", dest='tf_weighting', type="string", default="natural",
                            help='how to weight term frequency in the document vector space. '
                                 'Choose from "Natural" (default), "Log", "Boolean", "Augmented"')
@@ -119,6 +119,11 @@ def is_stopword(result, line_split, removal_method):
         return line_split[WORD_TYPE_INDEX][0] not in NON_STOPWORD_TYPE_CHARS
     elif removal_method.lower() == "frequency":
         return result in stopword_set
+    elif removal_method.lower() == "list":
+        return result.lower() in stopword_set
+    else:
+        raise ValueError("Unknown value of parameter --stopwords-removal: " + removal_method.lower())
+
 
 
 def process_vert_format_line(line):
@@ -373,6 +378,11 @@ if __name__ == "__main__":
             stopw_filename = "obj/stopwords-lower.pkl"
         else:
             stopw_filename = "obj/stopwords.pkl"
+        with open(stopw_filename, "rb") as inp:
+            stopword_set = pickle.load(inp)
+
+    if options.stopwords.lower() == "list":
+        stopw_filename = "obj/stopwords-list.pkl"
         with open(stopw_filename, "rb") as inp:
             stopword_set = pickle.load(inp)
 
