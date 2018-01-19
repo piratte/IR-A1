@@ -22,7 +22,7 @@ num_of_docs = 0
 
 
 def define_cli_opts():
-    USAGE = "%prog -q train-topics.list -d document.list -r train-run -o train-res.dat"
+    USAGE = "%prog -q train-topics.list -d document.list -r train-run -o train-res.dat [options]"
     result_opts = OptionParser(usage=USAGE)
     result_opts.add_option('-q', "--queries", dest='queries', help='file with a list of topic file names')
     result_opts.add_option('-d', "--documents", dest='documents', help='file with a list of document file names')
